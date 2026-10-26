@@ -1,0 +1,48 @@
+name: Compatibility report
+description: Share a hardware inventory to help investigate additional systems. No unlock run required.
+title: "[Compatibility] GPU / motherboard / CPU"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping investigate portability. The current EFI is restricted to one verified machine.
+        A report does not authorize unlock. Do not bypass checks or run a new experiment to complete this form.
+        Read docs/CONTRIBUTING.en.md. Review all content before posting publicly.
+        Never attach firmware, PROM/VBIOS dumps, recovery keys, serials, UUIDs or personal paths.
+  - type: dropdown
+    id: evidence_kind
+    attributes:
+      label: Evidence type
+      options:
+        - "Inventory only — unlock not attempted"
+        - "Existing diagnostic logs only"
+        - "Existing unlock experiment — details below"
+    validations:
+      required: true
+  - type: textarea
+    id: inventory
+    attributes:
+      label: Reviewed inventory or manually entered hardware
+      description: Paste output from tools/collect_compatibility.py after reviewing it, or enter board/CPU/GPU/Windows/BIOS/driver models manually.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: display
+    attributes:
+      label: Physical display connection and available adapters
+      description: Where is the monitor connected? Is an iGPU or separate display GPU available? Unknown is a valid answer.
+    validations:
+      required: true
+  - type: textarea
+    id: existing_evidence
+    attributes:
+      label: Existing evidence, if any
+      description: For an already performed experiment only, include EFI SHA-256/profile, sanitized final-stage logs, boot handoff and benchmark conditions. Leave blank for inventory-only reports.
+  - type: checkboxes
+    id: reviewed
+    attributes:
+      label: Public report review
+      options:
+        - label: I reviewed this report for personal information and understand that inventory collection does not establish unlock support.
+          required: true

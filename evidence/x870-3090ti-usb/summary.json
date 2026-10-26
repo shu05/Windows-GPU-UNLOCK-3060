@@ -1,0 +1,82 @@
+{
+  "profile": "x870-3090ti",
+  "hardware": {
+    "board": "Gigabyte X870 AORUS ELITE WIFI7",
+    "bios": "F13d",
+    "cpu": "AMD Ryzen 7 9800X3D (iGPU present, no GOP)",
+    "gpu": "ASUS RTX 3090 Ti 24 GiB (GA102) 10de:2203 / 1043:8870",
+    "vbios": "94.02.a0.00.2c",
+    "display": "all monitors on RTX (single-RTX headless topology)"
+  },
+  "software": {
+    "windows": "Windows 11 Pro build 26300",
+    "nvidia_driver": "621.01",
+    "cuda_runtime": 12060,
+    "cublas": 120600,
+    "benchmark": "benchmark/compute-benchmark-3090ti.cu, cuBLAS GEMM n=4096, three trials, medians"
+  },
+  "route": "headless USB (GU_USB_MEDIA), FAT32 MBR stick, firmware boot menu",
+  "efi": {
+    "child_sha256": "6ffe616579eeb7ff05df15510dfaca5a9308d1ab8d9ad9c8f2da9899359c38a9",
+    "wrapper_without_precheck_sha256": "db26168371e6b11387cd649b8f8cab1062065106e39e0d9b2bf9cd197c9f5e8d",
+    "wrapper_with_precheck_sha256": "19a145a2a6387bb71b3c72186f36fa5b7c41ad68c8e3c9db71eb1bff76fa0540",
+    "reproducible": "research/headless/build-usb.ps1 -HardwareProfile x870-3090ti on this branch rebuilds the child and the pre-check wrapper byte-identically"
+  },
+  "runs": [
+    {
+      "log": "AUTO000000",
+      "boot": "full shutdown",
+      "wrapper": "without pre-check",
+      "entry_ss0": "0x40123070",
+      "entry_ss1": "0x3",
+      "final": "status=0 clean=1 FLR=1",
+      "windows": "direct start, display recovered"
+    },
+    {
+      "log": "AUTO000001",
+      "boot": "full shutdown",
+      "wrapper": "with pre-check (passed: cold)",
+      "entry_ss0": "0x44123070",
+      "entry_ss1": "0x7",
+      "final": "status=0 clean=1 FLR=1",
+      "windows": "direct start, display recovered"
+    },
+    {
+      "log": "AUTO000002",
+      "boot": "Windows restart (board resets the GPU)",
+      "wrapper": "with pre-check (passed: cold)",
+      "entry_ss0": "0x0",
+      "entry_ss1": "0x0",
+      "final": "status=0 clean=1 FLR=1",
+      "windows": "direct start, display recovered"
+    }
+  ],
+  "selectors_after": {
+    "ss0": "0x88888888",
+    "ss1": "0x8"
+  },
+  "tflops_medians": {
+    "locked_baseline": {
+      "fp32": 32.298817,
+      "fp16_tensor": 80.350353,
+      "bf16_tensor": 80.983641
+    },
+    "after_AUTO000000": {
+      "fp32": 32.252851,
+      "fp16_tensor": 149.296698,
+      "bf16_tensor": 150.215701
+    },
+    "after_AUTO000002": {
+      "fp32": 32.203036,
+      "fp16_tensor": 149.050588,
+      "bf16_tensor": 150.215701
+    }
+  },
+  "not_established": [
+    "pre-check skip branch on hardware (this board resets the GPU on restart)",
+    "BootOrder fallback on hardware",
+    "sleep/hibernate resume",
+    "long-term stability, games/applications",
+    "internal-ESP route for this profile"
+  ]
+}

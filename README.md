@@ -1,0 +1,163 @@
+# Windows GPU UNLOCK
+
+**English** | [한국어](README.ko.md)
+
+Experimental UEFI GPU unlock and direct Windows handoff, expanded through
+community contributions. This source tree contains **three exact-machine
+profiles with recorded hardware results**: two internal headless configurations
+and one headless USB configuration. Read [compatibility](docs/COMPATIBILITY.en.md)
+before choosing a build; a GPU model name alone does not establish support.
+
+| Build profile | Exact GPU / motherboard / BIOS / CPU | Recorded route and evidence |
+|---|---|---|
+| `b650m-3090fe` (default) | RTX 3090 FE / ASUS TUF GAMING B650M-PLUS WIFI / 3057 / Ryzen 7 7800X3D | Internal headless; [original maintainer's hardware evidence](evidence/headless-handoff/README.md) |
+| `b660m-3070ti` | MSI RTX 3070 Ti / ASUS TUF GAMING B660M-E D4 / 4003 / Core i7-12700F **without iGPU** | Internal headless, aggregate console; [contributor's report and implementation, PR #5](https://github.com/impacifist/Windows-GPU-UNLOCK/pull/5) |
+| `x870-3090ti` | ASUS RTX 3090 Ti / Gigabyte X870 AORUS ELITE WIFI7 / F13d / Ryzen 7 9800X3D | **Headless USB only**; [contributor's PR #10](https://github.com/impacifist/Windows-GPU-UNLOCK/pull/10), [sanitized evidence](evidence/x870-3090ti-usb/README.md) |
+
+These results concern the exact builds and systems in their reports. The current
+cold-precheck hardening has host/build verification, **not a new physical boot or
+recovery test** on those machines. Contributor reports are identified separately
+from the original maintainer's run; they do not establish support for every card
+of the same model or every BIOS. The Ryzen CPUs in the table have iGPUs, but their
+reported headless routes used no active AMD GOP.
+
+The latest tagged release, **v0.3.1, is a source-only pre-release**. This source
+tree has changes beyond that tag, including the USB route and X870 profile; those
+are not a newly published release. Build locally with your own partition GUIDs.
+Firmware assets and private, partition-specific EFI binaries are not bundled.
+
+## Choose the correct boot path
+
+| Path | Display and input | Instructions |
+|---|---|---|
+| **MSI Z390 / RTX 3060 (GA106) port** | Experimental community port; USB stick and internal ESP auto-unlock both measured; +88–90 % BF16 tensor throughput | [Port notes and instructions](PORT-MSI-Z390-RTX3060.md) |
+| **Internal headless** | B650M/3090 FE or B660M/3070 Ti profile; monitors on RTX; display temporarily removed; no T/U/Enter | [Internal headless guide](docs/HEADLESS.en.md) |
+| **Headless USB** | X870/3090 Ti contributor-tested route; profile-specific wrapper and child on a FAT32 USB stick | [Headless USB guide](docs/HEADLESS-USB.en.md) |
+| Internal AMD-display manual / Auto | Original B650M profile, motherboard/iGPU display preserved; manual variant requires U | [Existing internal guide](docs/INTERNAL-BOOT.en.md) |
+| Legacy USB manual | Original AMD/iGPU display profile; U once, then Boot Override to Windows without reset | [Legacy USB guide](docs/GUIDE.en.md) |
+
+X870 is not wired into `Configure.ps1` or `Headless.ps1`; use its USB guide.
+USB packages can also be built for the first two profiles, but their recorded
+internal boots do not validate those USB routes. The legacy USB EFI retains its
+AMD display requirement. BIOS priority `USB → Windows` alone does not implement
+direct handoff.
+
+## Internal headless quick start
+
+**This example is for the default B650M / RTX 3090 FE profile.** For B660M,
+select `-HardwareProfile b660m-3070ti` in both configuration and build as described
+in [compatibility](docs/COMPATIBILITY.en.md). X870 uses the separate USB route.
+
+Read the [full guide and recovery procedure](docs/HEADLESS.en.md) before changing
+boot settings. Use the exact supported hardware, Secure Boot disabled, a fully
+decrypted Windows C: with BitLocker protection off, and a connected keyboard.
+The tools do not disable encryption.
+
+Preserve the **existing Windows ESP and recovery partition**. Prepare a separate
+GPT FAT32 **EFI System Partition of at least 1 GiB**, with a letter such as U:.
+Tools do not create, shrink, delete or format partitions. An ordinary FAT32 data
+partition alone is not the required ESP.
+
+You need Python 3.9+, clang/lld-link **20.1.8**, the pinned repository dependencies
+and five locally obtained [firmware assets](docs/ASSETS.en.md).
+Host integration tests additionally need MSVC/Windows SDK and private fixtures.
+
+From an administrator PowerShell in the repository root:
+
+```powershell
+# Replace the GUID and tool paths with your own values.
+.\internal-boot\Configure.ps1 -UnlockDriveLetter U `
+  -WindowsEspGuid 'YOUR-WINDOWS-ESP-GUID'
+.\research\headless\build-unlock.ps1 `
+  -Clang 'C:\TOOLS\LLVM20\bin\clang.exe' `
+  -LldLink 'C:\TOOLS\LLVM20\bin\lld-link.exe'
+
+# Stage and append a separate F8 test entry; retain existing boot priority.
+.\internal-boot\Headless.ps1 -Assets '.\assets' -Register
+```
+
+Without an action switch, `Headless.ps1 -Assets '.\assets'` only stages files.
+Configuration and build do not register a boot entry.
+
+1. Save work and fully power off. On the tested ASUS firmware, select
+   **F8 → GPU Headless UNLOCK - EXPERIMENTAL**.
+2. **Wait without T, U or Enter.** Initial Esc within five seconds skips release
+   and unlock and boots Windows directly.
+3. The screen becomes black while the RTX GOP is removed. The child attempts
+   once and the wrapper starts Windows directly. Do not reset between unlock and
+   Windows. Confirm display recovery and [measure](docs/BENCHMARK.en.md).
+4. Only after that F8 test succeeds, enable default automatic boot:
+
+   ```powershell
+   .\internal-boot\Headless.ps1 -EnableAutomatic -ConfirmedSuccess
+   ```
+
+That explicit action places headless first and Windows Boot Manager second and
+disables Windows Fast Startup. Test registration alone does not. Publishing this
+release does not change the research PC's current default boot selection.
+
+**The two Esc windows differ:** initial wrapper Esc boots Windows without release;
+the later three-second child Esc window is after release and cancels into a stop.
+It does not restore the display or continue to Windows. On failure or if Windows
+does not return, fully power off and choose **F8 → Windows Boot Manager**.
+
+```powershell
+.\internal-boot\Headless.ps1 -RestoreWindowsFirst
+```
+
+Windows-first recovery is independent of experimental EFI/build artifacts and
+still works without saved state. Restoring the prior Fast Startup setting needs
+that state; retain it and backups. [Recovery details](docs/HEADLESS.en.md#recovery).
+
+## Original B650M results and limits
+
+The original B650M hardware run's successful child reported SS0 `0x88888888`, SS1 `0x8`, BME disabled, zero
+remaining mappings, completed cleanup and one FLR. The wrapper verified the released
+topology before Windows entry. Windows display recovery was observed by the operator.
+
+| CUDA 12.6 / cuBLAS 12.6, 4096 × 4096 | Three-run median |
+|---|---:|
+| FP32 pedantic | 22.85 TFLOPS |
+| FP16 Tensor / FP32 accumulation | 124.97 TFLOPS |
+| BF16 Tensor / FP32 accumulation | 128.93 TFLOPS |
+
+There is **no contemporary controlled locked baseline** for this headless boot,
+so these values do not establish an unlock percentage. They do not establish game
+or ComfyUI gains, long-term stability, sleep/hibernate resume or repeated automatic
+cold-boot reliability. [Sanitized measurements](evidence/headless-handoff/summary.json)
+and [earlier results](docs/RESULTS.en.md) describe separate experiments.
+
+For the other machines' measurements, see [B660M Profile 2](docs/COMPATIBILITY.en.md)
+and [X870 USB evidence](evidence/x870-3090ti-usb/README.md). Those results are tied
+to their reported builds; a later successful build or host test does not extend
+the physical test record.
+
+## Implementation and boundaries
+
+Headless is a separate compile-time profile. Exact GPU/PROM/PCI state, firmware
+driver code, ownership, cold state, immutable selectors and cleanup checks remain.
+The child logs to files only and rejects physical GOP reappearance or changed
+console/input interfaces. Ordinary builds retain their AMD display guards.
+Do not remove checks or substitute a PROM hash to force another machine through.
+
+| Path | Purpose |
+|---|---|
+| `internal-boot/`, `research/headless/` | Internal/headless source, local build, installation and host tests |
+| `unlock/`, `release/` | Preserved legacy USB manual implementation and historical artifacts |
+| `benchmark/`, `evidence/` | Measurement tools and selected public evidence |
+| `docs/` | Compatibility, assets, boot guides and limitations |
+
+No VBIOS flashing or Windows driver replacement is part of the procedure.
+Driver 617.14 was unchanged in the documented run. Host mock tests do not add hardware
+support. New systems require [compatibility reporting](docs/CONTRIBUTING.en.md) and
+[portability validation](docs/PORTABILITY.en.md).
+
+## License and attribution
+
+The port and reused core are **GPL-2.0-only**; EDK2 and separately attributed
+components retain their licenses. Based on
+[rough2515-hub/rtx3080-unlock-public](https://github.com/rough2515-hub/rtx3080-unlock-public/tree/a08254d269af30ace9e57237abd3d8e6c261e8f5)
+and [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock/tree/0ebdb1c6308b6a2072be5bf04513472942541956).
+Preserve [LICENSE](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md) and
+[change history](CHANGES.md). NVIDIA firmware, PROM/BIOS images, drivers and CUDA
+DLLs are not redistributed in this source release.

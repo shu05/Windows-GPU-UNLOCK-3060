@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-26",
+  "machine": "MSI MPG Z390 GAMING PLUS, i5-9600K, Windows 11, driver 595.79, CUDA 12.6 cuBLAS 12.6.1",
+  "gpu": "NVIDIA GeForce RTX 3060 12GB (GA106, 0000:01:00.0)",
+  "method": "compute-benchmark-3060.cu (n=4096, 30 samples, 2s warmup, median, cuBLAS GemmEx tensor-op, FP32 accumulate)",
+  "locked": {
+    "note": "cold power-cycle, stock state, no unlock transaction",
+    "fp32_gflops": 8091.7,
+    "fp16_tensor_gflops": 27110.6,
+    "bf16_tensor_gflops": 27017.7
+  },
+  "unlocked": {
+    "note": "USB-stick EFI transaction, plm=0x8b8f, boot=0x3ff, FINAL status=0 clean=1; device silenced (command/BAR/ROM zeroed) before bootmgfw StartImage so Windows reassigns resources",
+    "fp32_gflops": 7594.7,
+    "fp16_tensor_gflops": 50027.6,
+    "bf16_tensor_gflops": 50918.4
+  },
+  "gains": {
+    "fp16_tensor_percent": 84.5,
+    "bf16_tensor_percent": 88.5
+  },
+  "code12_fix": "Windows CM_PROB_NORMAL_CONFLICT after unlock was caused by honoring UEFI-programmed BARs on the re-modeled device; GuSilenceDevice() zeroes command/BAR0/BAR1/BAR1hi/ROM via ECAM right before StartImage(bootmgfw), after all fail-closed verifications."
+}
