@@ -39,8 +39,15 @@ upstream; the evidence in this file is from one specific machine.
    performs a fresh assignment. **Do not remove this step.**
 4. **No-logs wrapper build (`-DGU_NO_FILE_LOGS`)**: the wrapper's log layer
    lands on an in-memory `EFI_FILE_PROTOCOL` stub and `Early()` is skipped, so
-   an ESP-installed unlock writes **nothing** to disk. The child still writes
-   one fixed-size, in-place-overwritten `RTX3090-UNLOCK\AUTO000000\REPORT.TXT`.
+   an ESP-installed unlock writes **nothing** to disk. The stub's `Write`
+   **echoes the byte count** (the flow's `Record()` rejects a short write, so
+   zeroing it breaks the whole boot — measured). The stub also keeps
+   `GetInfo`/`Open` unsupported; only `Write`/`Flush`/`Close`/`SetPosition`
+   are exercised. The child still writes its report (one fixed-size file per
+   run slot, `RTX3090-UNLOCK\AUTO0000NN\REPORT.TXT`).
+   Failure paths in `OpenLog`/`Prepare`/`FullChoice` now print
+   `ScreenStatus` markers (`openlog-fs`, `prepare-windows`, `choose-conin`,
+   …) so a stopped boot names the exact stage even with logs disabled.
 5. **Installer tolerance for small ESPs**: the 1 GiB minimum in
    `Configure.ps1` / `Headless.ps1` / `install/headless-package.ps1` is
    lowered to 512 MiB, and a `Get-VolumeInfoFallback` (kernel32

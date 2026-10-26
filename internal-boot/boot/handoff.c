@@ -146,7 +146,7 @@ static EFI_STATUS FilePath(EFI_HANDLE Device,const CHAR16 *Name,EFI_DEVICE_PATH_
  * child image is still loaded from it. */
 static EFI_STATUS EFIAPI StubOpen(EFI_FILE_PROTOCOL *t,EFI_FILE_PROTOCOL **o,CHAR16 *n,UINT64 m,UINT64 a){(void)t;(void)o;(void)n;(void)m;(void)a;return EFI_UNSUPPORTED;}
 static EFI_STATUS EFIAPI StubRead(EFI_FILE_PROTOCOL *t,UINTN *n,VOID *b){(void)t;(void)b;if(n)*n=0;return EFI_UNSUPPORTED;}
-static EFI_STATUS EFIAPI StubWrite(EFI_FILE_PROTOCOL *t,UINTN *n,VOID *b){(void)t;(void)b;if(n)*n=0;return EFI_SUCCESS;}
+static EFI_STATUS EFIAPI StubWrite(EFI_FILE_PROTOCOL *t,UINTN *n,VOID *b){(void)t;(void)n;(void)b;return EFI_SUCCESS;}
 static EFI_STATUS EFIAPI StubGetPos(EFI_FILE_PROTOCOL *t,UINT64 *p){(void)t;if(p)*p=0;return EFI_SUCCESS;}
 static EFI_STATUS EFIAPI StubSetPos(EFI_FILE_PROTOCOL *t,UINT64 p){(void)t;(void)p;return EFI_SUCCESS;}
 static EFI_STATUS EFIAPI StubGetInfo(EFI_FILE_PROTOCOL *t,EFI_GUID *i,UINTN *s,VOID *b){(void)t;(void)i;(void)b;if(s)*s=0;return EFI_UNSUPPORTED;}
@@ -164,8 +164,8 @@ static EFI_FILE_PROTOCOL LogStub={EFI_FILE_REVISION,StubOpen,StubClose,StubDelet
 static EFI_STATUS OpenLog(VOID) {
   EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs=NULL;
   EFI_STATUS s=Table->BootServices->HandleProtocol(OwnDevice,&FsGuid,(VOID **)&fs);
-  if(s!=EFI_SUCCESS || !fs)return EFI_UNSUPPORTED;
-  s=fs->OpenVolume(fs,&Root);if(s!=EFI_SUCCESS || !Root)return EFI_DEVICE_ERROR;
+  if(s!=EFI_SUCCESS || !fs){ScreenStatus("openlog-fs",s==EFI_SUCCESS?EFI_UNSUPPORTED:s);return EFI_UNSUPPORTED;}
+  s=fs->OpenVolume(fs,&Root);if(s!=EFI_SUCCESS || !Root){ScreenStatus("openlog-volume",s==EFI_SUCCESS?EFI_DEVICE_ERROR:s);return EFI_DEVICE_ERROR;}
 #ifdef GU_NO_FILE_LOGS
   Log=&LogStub;return EFI_SUCCESS;
 #endif
@@ -274,11 +274,11 @@ static EFI_STATUS Prepare(VOID *Context) {
   own=OwnDevice;
 #else
   EFI_STATUS s=FindPartition(&GuInternalPartition,&own);
-  if(s!=EFI_SUCCESS || own!=OwnDevice)return EFI_COMPROMISED_DATA;
+  if(s!=EFI_SUCCESS || own!=OwnDevice){ScreenStatus("prepare-own",s==EFI_SUCCESS?EFI_COMPROMISED_DATA:s);return EFI_COMPROMISED_DATA;}
 #endif
   Early("prepare-usb-ok");
   s=FindPartition(&GuWindowsPartition,&windows);
-  if(s!=EFI_SUCCESS || windows==own){EarlyStatus("prepare-windows",s==EFI_SUCCESS?EFI_COMPROMISED_DATA:s);return EFI_COMPROMISED_DATA;}
+  if(s!=EFI_SUCCESS || windows==own){ScreenStatus("prepare-windows",s==EFI_SUCCESS?EFI_COMPROMISED_DATA:s);return EFI_COMPROMISED_DATA;}
   Early("prepare-windows-ok");
   s=OpenLog();if(s!=EFI_SUCCESS){EarlyStatus("prepare-openlog",s);return s;}
   Early("prepare-openlog-ok");
@@ -291,10 +291,11 @@ static EFI_STATUS Prepare(VOID *Context) {
   s=FilePath(windows,L"\\EFI\\Microsoft\\Boot\\bootmgfw.efi",&path);
   if(s==EFI_SUCCESS)s=Table->BootServices->LoadImage(FALSE,Self,path,NULL,0,&WindowsImage);
   if(path)Table->BootServices->FreePool(path);
-  if(s!=EFI_SUCCESS){EarlyStatus("prepare-bootmgr",s);return s;}
+  if(s!=EFI_SUCCESS){ScreenStatus("prepare-bootmgr",s);return s;}
   EFI_LOADED_IMAGE_PROTOCOL *loaded=NULL;
   s=Table->BootServices->HandleProtocol(WindowsImage,&LoadedGuid,(VOID **)&loaded);
   Early(s==EFI_SUCCESS && loaded && loaded->DeviceHandle==windows?"prepare-complete":"prepare-image-mismatch");
+  if(s!=EFI_SUCCESS || !loaded || loaded->DeviceHandle!=windows)ScreenStatus("prepare-image",s==EFI_SUCCESS?EFI_COMPROMISED_DATA:s);
   return s==EFI_SUCCESS && loaded && loaded->DeviceHandle==windows?EFI_SUCCESS:EFI_COMPROMISED_DATA;
 }
 #ifndef GU_DIAGNOSTIC_ONLY
@@ -321,7 +322,7 @@ static EFI_STATUS Unlock(VOID *Context) {
 #ifdef GU_FULL_UNLOCK
 static EFI_STATUS FullChoice(VOID *Context,BOOLEAN *Skip) {
   (void)Context;*Skip=FALSE;
-  if(!Table->ConIn || !Table->ConIn->ReadKeyStroke)return EFI_UNSUPPORTED;
+  if(!Table->ConIn || !Table->ConIn->ReadKeyStroke){ScreenStatus("choose-conin",EFI_UNSUPPORTED);return EFI_UNSUPPORTED;}
 #ifdef GU_HEADLESS_RESEARCH
   Say(L"SINGLE RTX HEADLESS UNLOCK RESEARCH: one guarded attempt, then Windows.\r\nNo key required. Esc within 5 seconds skips all changes.\r\nScreen may stop updating. Errors stop without reset/retry; power off and F8 Windows Boot Manager.\r\n");
 #elif defined(GU_AUTOMATIC_BOOT)
