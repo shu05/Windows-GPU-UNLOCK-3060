@@ -116,8 +116,8 @@
   2,1,12,0,0xd0,0x41,3,10,0,0,0,0,1,1,6,0,0,1,1,1,6,0,0,0,2,3,8,0,0,1,1,128,127,255,4,0
 /* AMI console text-out driver (BIOS 1.70 image fingerprint, PIWG
  * 628a497d-2bf6-4264-8741-069dbd3399d6; binding stop 0x1280). */
-#define GU_CONSOLE_TEXT_SIZE 0x64a0U
-#define GU_CONSOLE_TEXT_STOP 0x1280U
+#define GU_CONSOLE_TEXT_SIZE 0x6500U
+#define GU_CONSOLE_TEXT_STOP 0x12ccU
 #define GU_CONSOLE_TEXT_VERSION 0x10U
 /* AMI GOP consumer driver bound to the RTX child (BIOS 1.70 image
  * fingerprint, PIWG 43e7abdd-e352-4cfb-a230-4cdc1d350e5c). */

@@ -23,6 +23,11 @@
 
 #define MAX_HANDLES 1024
 #define MAX_RECORDS 4096
+static GU_PREPARE_LOG ContextLogger;static VOID *ContextArg;
+static EFI_STATUS Plog(const char *Event,EFI_STATUS Status) {
+  if(ContextLogger)return ContextLogger(ContextArg,Event,Status);
+  return EFI_SUCCESS;
+}
 typedef struct {
   EFI_HANDLE Handle,Agent,Controller;
   EFI_GUID Protocol;
@@ -248,13 +253,20 @@ static BOOLEAN ExpectedGraph(const PLAN *p,const GRAPH *original,const GRAPH *cu
 static EFI_STATUS Driver(EFI_BOOT_SERVICES *bs,EFI_HANDLE agent,const EFI_GUID *file,UINTN size,UINTN stop,UINT32 version,UINT8 codetype) {
   EFI_DRIVER_BINDING_PROTOCOL *d=NULL;EFI_LOADED_IMAGE_PROTOCOL *im=NULL;
   EFI_STATUS s=Interface(bs,agent,&BindingGuid,(VOID **)&d);
-  if(s!=EFI_SUCCESS || !d || !d->Stop || d->DriverBindingHandle!=agent || d->Version!=version || !d->ImageHandle)return EFI_UNSUPPORTED;
+  if(s!=EFI_SUCCESS || !d || !d->Stop || d->DriverBindingHandle!=agent || !d->ImageHandle) {Plog("pc-drv-bind",s);return EFI_UNSUPPORTED;}
+  if(d->Version!=version) {Plog("pc-drv-version",d->Version);return EFI_UNSUPPORTED;}
   s=Interface(bs,d->ImageHandle,&ImageGuid,(VOID **)&im);
-  if(s!=EFI_SUCCESS || !im || !im->ImageBase || im->ImageCodeType!=codetype || im->ImageSize!=size ||
-     (UINTN)d->Stop!=(UINTN)im->ImageBase+stop || !im->FilePath)return EFI_UNSUPPORTED;
+  if(s!=EFI_SUCCESS || !im || !im->ImageBase || !im->FilePath) {Plog("pc-drv-image",s);return EFI_UNSUPPORTED;}
+  if(im->ImageCodeType!=codetype) {Plog("pc-drv-codetype",im->ImageCodeType);return EFI_UNSUPPORTED;}
+  if(im->ImageSize!=size) {Plog("pc-drv-size",im->ImageSize);return EFI_UNSUPPORTED;}
+  if((UINTN)d->Stop!=(UINTN)im->ImageBase+stop) {Plog("pc-drv-stop",(UINTN)d->Stop-(UINTN)im->ImageBase);return EFI_UNSUPPORTED;}
   UINTN n=0;
   if(!GuInspectPath(im->FilePath,NULL,&n,NULL,NULL) || n!=24 || im->FilePath->Type!=MEDIA_DEVICE_PATH || im->FilePath->SubType!=MEDIA_PIWG_FW_FILE_DP ||
-     im->FilePath->Length[0]!=20 || im->FilePath->Length[1] || !GuGuidEqual((UINT8 *)im->FilePath+4,file))return EFI_UNSUPPORTED;
+     im->FilePath->Length[0]!=20 || im->FilePath->Length[1] || !GuGuidEqual((UINT8 *)im->FilePath+4,file)) {
+    const UINT32 *g=(const UINT32 *)((const UINT8 *)im->FilePath+4);
+    Plog("pc-drv-path",n);Plog("pc-drv-guid0",g[0]);Plog("pc-drv-guid1",g[1]);Plog("pc-drv-guid2",g[2]);Plog("pc-drv-guid3",g[3]);
+    return EFI_UNSUPPORTED;
+  }
   return EFI_SUCCESS;
 }
 #if GU_CONSOLE_AGGREGATE
@@ -308,9 +320,13 @@ static EFI_STATUS Consumers(EFI_SYSTEM_TABLE *t,PLAN *p,const GRAPH *g) {
     if((e->Agent==nv || e->Agent==p->ComboAgent) && e->Handle!=p->RtxPci && e->Handle!=p->Rtx && e->Handle!=p->Agg)return EFI_ACCESS_DENIED;
   }
   EFI_STATUS s=Driver(t->BootServices,p->EdidAgent,&EdidFile,GU_EDID_IMAGE_SIZE,GU_EDID_STOP,1,EfiRuntimeServicesCode);
+  Plog("pc-3a-ediddrv",s);
   if(s==EFI_SUCCESS)s=Driver(t->BootServices,p->ComboAgent,&ComboFile,GU_COMBO_SIZE,GU_COMBO_STOP,GU_COMBO_VERSION,EfiBootServicesCode);
+  Plog("pc-3b-combodrv",s);
   if(s==EFI_SUCCESS)s=Driver(t->BootServices,p->GfxAgent,&GfxFile,GU_CONSOLE_GFX_SIZE,GU_CONSOLE_GFX_STOP,GU_CONSOLE_GFX_VERSION,EfiBootServicesCode);
+  Plog("pc-3c-gfxdrv",s);
   if(s==EFI_SUCCESS)s=Driver(t->BootServices,p->OutAgent,&OutFile,GU_CONSOLE_TEXT_SIZE,GU_CONSOLE_TEXT_STOP,GU_CONSOLE_TEXT_VERSION,EfiBootServicesCode);
+  Plog("pc-3d-outdrv",s);
   return s;
 }
 #else
@@ -356,7 +372,9 @@ static EFI_STATUS Consumers(EFI_SYSTEM_TABLE *t,PLAN *p,const GRAPH *g) {
   if(amdOut!=1 || amdChild!=1 || amdGfx!=1)return EFI_ACCESS_DENIED;
 #endif
   EFI_STATUS s=Driver(t->BootServices,p->OutAgent,&OutFile,GU_CONSOLE_TEXT_SIZE,GU_CONSOLE_TEXT_STOP,GU_CONSOLE_TEXT_VERSION,GU_DRIVER_CODE_TYPE);
+  Plog("pc-3c-outdrv",s);
   if(s==EFI_SUCCESS)s=Driver(t->BootServices,p->GfxAgent,&GfxFile,GU_CONSOLE_GFX_SIZE,GU_CONSOLE_GFX_STOP,GU_CONSOLE_GFX_VERSION,GU_DRIVER_CODE_TYPE);
+  Plog("pc-3d-gfxdrv",s);
   return s;
 }
 #endif
@@ -373,9 +391,22 @@ static EFI_STATUS Alive(EFI_SYSTEM_TABLE *t,PLAN *p) {
   if(s!=EFI_SUCCESS || out!=p->ConsoleText || err!=p->ErrorText || in!=p->Keys)return EFI_NOT_READY;
   return Displays(t,p,FALSE);
 }
+static EFI_HANDLE FindHandle(EFI_BOOT_SERVICES *bs,EFI_GUID *guid,VOID *iface) {
+  EFI_HANDLE *list=NULL;EFI_STATUS s;UINTN count=0,i;
+  s=bs->LocateHandleBuffer(ByProtocol,guid,NULL,&count,&list);
+  if(s!=EFI_SUCCESS || !list)return NULL;
+  for(i=0;i<count;i++) {
+    VOID *found=NULL;
+    if(bs->HandleProtocol(list[i],guid,&found)==EFI_SUCCESS && found==iface) {
+      bs->FreePool(list);return list[i];
+    }
+  }
+  bs->FreePool(list);return NULL;
+}
 EFI_STATUS GuPrepareConsole(EFI_SYSTEM_TABLE *t,GU_PREPARE_LOG log,VOID *context) {
+  ContextLogger=log;ContextArg=context;
   PreparedReady=FALSE;
-  if(!t || !t->BootServices || !log || !t->ConOut || !t->StdErr || !t->ConIn || !t->ConsoleOutHandle || !t->ConsoleInHandle || !t->StandardErrorHandle)return EFI_INVALID_PARAMETER;
+  if(!t || !t->BootServices || !log || !t->ConOut || !t->StdErr || !t->ConIn)return EFI_INVALID_PARAMETER;
   EFI_BOOT_SERVICES *bs=t->BootServices;
   if(!bs->DisconnectController || !bs->RaiseTPL || !bs->RestoreTPL)return EFI_UNSUPPORTED;
 #ifdef GU_SINGLE_RTX_CONSOLE
@@ -387,14 +418,22 @@ EFI_STATUS GuPrepareConsole(EFI_SYSTEM_TABLE *t,GU_PREPARE_LOG log,VOID *context
   static GRAPH original,current;PLAN p={0};
 #endif
   p.Console=t->ConsoleOutHandle;p.Input=t->ConsoleInHandle;p.Error=t->StandardErrorHandle;
+  if(!p.Console){p.Console=FindHandle(bs,&TextGuid,t->ConOut);log(context,"pc-recovered-console-handle",p.Console?0:1);}
+  if(!p.Error){p.Error=FindHandle(bs,&TextGuid,t->StdErr);log(context,"pc-recovered-error-handle",p.Error?0:1);}
+  if(!p.Input){p.Input=FindHandle(bs,&InputGuid,t->ConIn);log(context,"pc-recovered-input-handle",p.Input?0:1);}
+  if(!p.Console || !p.Error || !p.Input)return EFI_INVALID_PARAMETER;
   p.ConsoleText=t->ConOut;p.ErrorText=t->StdErr;p.Keys=t->ConIn;
 #ifdef GU_SINGLE_RTX_CONSOLE
   p.KeyReset=(UINTN)t->ConIn->Reset;p.KeyRead=(UINTN)t->ConIn->ReadKeyStroke;p.KeyWait=t->ConIn->WaitForKey;
 #endif
   EFI_STATUS s=Displays(t,&p,TRUE);
+  (void)log(context,"pc-1-displays",s);
   if(s==EFI_SUCCESS)s=Snapshot(bs,&original);
+  (void)log(context,"pc-2-snapshot",s);
   if(s==EFI_SUCCESS)s=Consumers(t,&p,&original);
+  (void)log(context,"pc-3-consumers",s);
   if(s==EFI_SUCCESS)s=Alive(t,&p);
+  (void)log(context,"pc-4-alive",s);
   EFI_STATUS recorded=log(context,"console-prepare-preflight",s);
   if(s!=EFI_SUCCESS || recorded!=EFI_SUCCESS)return s==EFI_SUCCESS?recorded:s;
 #if !GU_CONSOLE_AGGREGATE

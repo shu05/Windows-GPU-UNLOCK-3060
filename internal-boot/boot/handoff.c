@@ -314,8 +314,30 @@ static EFI_STATUS Select(VOID *Context,BOOLEAN *Skip) {
   return EFI_SUCCESS;
 }
 #endif
+/* Post-release console output is unsafe, so stage progress also goes to a file on
+ * the unlock volume: NVMe firmware I/O does not depend on the released GPU. */
+static EFI_FILE_PROTOCOL *StageH;
+static VOID StageFile(VOID *Context,const char *Event,EFI_STATUS Status) {
+  EFI_STATUS s;UINTN n=0;UINTN i=0;INTN k;char buf[64];
+  static const char hx[]="0123456789abcdef";
+  (void)Context;
+  if(!Root)return;
+  if(!StageH) {
+    s=Root->Open(Root,&StageH,L"\\RTX3090-UNLOCK\\STAGE.TXT",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
+    if(s!=EFI_SUCCESS){StageH=NULL;return;}
+  }
+  while(Event[i] && n<40)buf[n++]=Event[i++];
+  buf[n++]='=';buf[n++]='0';buf[n++]='x';
+  for(k=60;k>=0;k-=4)buf[n++]=hx[((UINT64)Status>>(UINT64)k)&0xF];
+  buf[n++]='\r';buf[n++]='\n';
+  (void)StageH->Write(StageH,&n,buf);(void)StageH->Flush(StageH);
+}
+static EFI_STATUS StageLog(VOID *Context,const char *Event,EFI_STATUS Status) {
+  (void)Context;(void)Record(NULL,Event,Status);StageFile(NULL,Event,Status);return EFI_SUCCESS;
+}
 static EFI_STATUS Unlock(VOID *Context) {
   (void)Context;
+  StageFile(NULL,"child-start",0);
   return Table->BootServices->StartImage(UnlockImage,NULL,NULL);
 }
 #endif
@@ -350,17 +372,22 @@ static EFI_STATUS FullChoice(VOID *Context,BOOLEAN *Skip) {
   }
   return EFI_SUCCESS;
 }
-static EFI_STATUS FullCapture(VOID *Context) {(void)Context;return GuCaptureGraph(Table,Log);}
+static EFI_STATUS FullCapture(VOID *Context) {(void)Context;Say(L"stage: capture\r\n");return GuCaptureGraph(Table,Log);}
 static BOOLEAN ReleaseStarted;
 static EFI_STATUS FullRelease(VOID *Context) {
   ReleaseStarted=TRUE;
+  Say(L"stage: release\r\n");
 #ifdef GU_HEADLESS_RESEARCH
   ResearchOutputDisabled=TRUE;
 #endif
-  (void)Context;EFI_STATUS s=GuPrepareConsole(Table,Record,NULL);
-  return s==EFI_SUCCESS?GuReleaseGop(Table,Self,Record,NULL):s;
+  (void)Context;EFI_STATUS s=GuPrepareConsole(Table,StageLog,NULL);
+  StageFile(NULL,"console-ready",s);
+  if(s!=EFI_SUCCESS)return s;
+  s=GuReleaseGop(Table,Self,Record,NULL);
+  StageFile(NULL,"gop-released",s);
+  return s;
 }
-static EFI_STATUS FullVerifyCold(VOID *Context) {(void)Context;return GuVerifyReleased(Table,TRUE);}
+static EFI_STATUS FullVerifyCold(VOID *Context) {(void)Context;EFI_STATUS s=GuVerifyReleased(Table,TRUE);StageFile(NULL,"verify-released",s);return s;}
 static EFI_STATUS ReportVerification(EFI_STATUS s) {
   const GU_VERIFY_DIAGNOSTIC *d=GuLastVerifyDiagnostic();
   if(d->ConfigDiff) {
@@ -481,6 +508,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
   s=GuHandoffFlow(&ops);
 #endif
   (void)Record(NULL,"handoff-stopped",s);
+  StageFile(NULL,"handoff-stopped",s);
 #ifdef GU_FULL_UNLOCK
   ScreenStatus("full-flow-returned",s);
 #endif

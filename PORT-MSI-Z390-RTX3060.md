@@ -157,6 +157,34 @@ A later ESP auto-unlock boot measured 51.29 TF BF16 (+90 %). Full JSON:
   GetInfo, SetInfo, Flush, OpenEx, ReadEx, WriteEx, FlushEx — and the `*Ex`
   members take only `(This, Token)` in this snapshot.
 
+## BIOS 1.F0: console driver fingerprints and boot entries (2026-10-31)
+
+A vendor BIOS update (1.70 -> 1.F0) broke the unlock boot in two ways:
+
+1. **Firmware boot entries are rebuilt.** The old F8 device entry disappeared;
+   the firmware auto-created a `UEFI OS` entry pointing at the first ESP
+   `\EFI\BOOT\BOOTX64.EFI` (our wrapper). Rename it with
+   `bcdedit /set {<guid>} description "..."`; the registered `Boot####` entry
+   survives the update and the 1.F0 F8 menu lists `Boot####` entries directly.
+2. **Console driver fingerprints changed.** The AMI text-output console driver
+   image was recompiled: `ImageSize 0x64a0 -> 0x6500`, `Stop offset 0x1280 ->
+   0x12cc` (the GOP driver image, driver versions and PIWG file GUIDs were
+   unchanged). `GuPrepareConsole` verifies these fingerprints before detaching
+   the console, so a mismatch fails closed with `EFI_UNSUPPORTED` (0x3) and
+   the wrapper stops before touching the GPU: the screen freezes right after
+   the `pre-release-cold-ss0` marker and no new `AUTO0000NN` slot appears.
+
+Diagnosis path added with this fix: the wrapper writes stage progress to
+`<ESP>\RTX3090-UNLOCK\STAGE.TXT` (firmware NVMe I/O survives the GPU release,
+console output after the release does not), and `prepare-console.c` logs the
+actual `size/stop/version/GUID` of a mismatched driver image. Re-pin the two
+constants in the `msi-z390-3060` block of `internal-boot/unlock/machine-profile.h`
+and rebuild. `GuPrepareConsole` also now self-recovers NULL console handles
+via `LocateHandleBuffer` when the firmware leaves them unset.
+
+Note the EFI status codes: `0x8000000000000002` is `EFI_INVALID_PARAMETER`,
+`0x8000000000000003` is `EFI_UNSUPPORTED`.
+
 ## License
 
 GPL-2.0-only, same as upstream (see `LICENSE`, `THIRD_PARTY_NOTICES.md`).
