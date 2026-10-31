@@ -13,6 +13,8 @@ static EFI_GUID LoadedGuid=EFI_LOADED_IMAGE_PROTOCOL_GUID,PathGuid=EFI_DEVICE_PA
 static EFI_SYSTEM_TABLE *Table;
 static EFI_FILE_PROTOCOL *Root,*Parent,*Run,*Report;
 static BOOLEAN LogFault;
+/* Silent=1 when <dir>\TRACE.ON is absent: zero files written this boot. */
+static BOOLEAN Silent;
 #ifdef GU_HEADLESS_RESEARCH
 /* Convert warnings at every file/protocol boundary, before consuming outputs. */
 static BOOLEAN GuIoError(EFI_STATUS s){return s!=EFI_SUCCESS;}
@@ -44,6 +46,7 @@ VOID GuLogText(const char *Text) {
 #ifndef GU_HEADLESS_RESEARCH
   GuConsole(Text);
 #endif
+  if(Silent)return;
   if(!Report || LogFault){LogError();return;}
   UINTN expected=strlen(Text),written=expected;
   EFI_STATUS status=Report->Write(Report,&written,(VOID *)Text);
@@ -55,7 +58,7 @@ VOID GuLog(const char *Format,...) {
   if(n>=sizeof(text)){LogError();GuConsole("Log format or length error.\n");return;}
   GuLogText(text);
 }
-BOOLEAN GuLogReady(VOID){return Report && !LogFault;}
+BOOLEAN GuLogReady(VOID){return Silent || (Report && !LogFault);}
 static BOOLEAN UsbPath(EFI_HANDLE Handle) {
   EFI_DEVICE_PATH_PROTOCOL *path=NULL;
   if(EFI_ERROR(Table->BootServices->HandleProtocol(Handle,&PathGuid,(VOID **)&path)) || !path)return FALSE;
@@ -102,6 +105,12 @@ EFI_STATUS GuIoOpen(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
 #endif
   if(EFI_ERROR(status) || !Parent)return EFI_NOT_FOUND;
   status=Metadata(Parent,TRUE,0);if(EFI_ERROR(status))return status;
+  {
+    EFI_FILE_PROTOCOL *sw=NULL;
+    Silent=(Parent->Open(Parent,&sw,L"TRACE.ON",EFI_FILE_MODE_READ,0)!=EFI_SUCCESS);
+    if(sw)(void)sw->Close(sw);
+    if(Silent)return EFI_SUCCESS;
+  }
 #ifdef GU_AUTOMATIC_BOOT
   for(UINTN slot=0;slot<1000000;slot++) {
     CHAR16 name[]=L"AUTO000000";UINTN number=slot;

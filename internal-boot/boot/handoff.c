@@ -316,12 +316,18 @@ static EFI_STATUS Select(VOID *Context,BOOLEAN *Skip) {
 #endif
 /* Post-release console output is unsafe, so stage progress also goes to a file on
  * the unlock volume: NVMe firmware I/O does not depend on the released GPU. */
-static EFI_FILE_PROTOCOL *StageH;
+static EFI_FILE_PROTOCOL *StageH;static BOOLEAN StageChecked,StageOn;
 static VOID StageFile(VOID *Context,const char *Event,EFI_STATUS Status) {
-  EFI_STATUS s;UINTN n=0;UINTN i=0;INTN k;char buf[64];
+  EFI_FILE_PROTOCOL *sw=NULL;EFI_STATUS s;UINTN n=0;UINTN i=0;INTN k;char buf[64];
   static const char hx[]="0123456789abcdef";
   (void)Context;
   if(!Root)return;
+  if(!StageChecked) {
+    StageChecked=TRUE;
+    StageOn=(Root->Open(Root,&sw,L"\\RTX3090-UNLOCK\\TRACE.ON",EFI_FILE_MODE_READ,0)==EFI_SUCCESS);
+    if(sw)(void)sw->Close(sw);
+  }
+  if(!StageOn)return;
   if(!StageH) {
     s=Root->Open(Root,&StageH,L"\\RTX3090-UNLOCK\\STAGE.TXT",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
     if(s!=EFI_SUCCESS){StageH=NULL;return;}
